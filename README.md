@@ -1,3 +1,8 @@
+# Cosmos-Self-Forcing-Training forked from FastGen NVIDIA
+We've implemented 3-stage training scripts for Self-Forcing with Cosmos-Predict2.5 (ODE pair generation, ODE init w/causal teacher, SF training).
+Please see <a href="https://github.com/j0seo/Cosmos-Self-Forcing-Training/commit/9e7f870b7e74c9157a3da69f3e370bd4f810a177">this commit</a> for the details.
+
+
 <h1 align="center">NVIDIA FastGen: Fast Generation from Diffusion Models</h1>
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
