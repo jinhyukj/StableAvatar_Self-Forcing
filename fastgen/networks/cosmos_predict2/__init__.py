@@ -6,6 +6,7 @@ from fastgen.networks.cosmos_predict2.network import (
     CosmosPredict2DiT,
     CosmosPredict2TextEncoder,
 )
+from fastgen.networks.cosmos_predict2.network_causal import CausalCosmosPredict2
 from fastgen.networks.cosmos_predict2.modules import (
     CheckpointMode,
     SACConfig,
@@ -13,6 +14,7 @@ from fastgen.networks.cosmos_predict2.modules import (
 
 __all__ = [
     "CosmosPredict2",
+    "CausalCosmosPredict2",
     "CosmosPredict2DiT",
     "CosmosPredict2TextEncoder",
     "CheckpointMode",

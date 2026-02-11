@@ -8,6 +8,7 @@ from fastgen.datasets.wds_dataloaders import (
     WDSLoader,
     ImageWDSLoader,
     VideoWDSLoader,
+    DirectoryLoader,
 )
 
 from fastgen.utils import LazyCall as L
@@ -72,10 +73,10 @@ PairLoaderConfig = L(WDSLoader)(
 # For multi-step KD: provides (real, path, condition) with denoising trajectory
 # Data requirements: {"real": clean, "path": [B, steps, C, ...], "condition": cond}
 # path contains intermediate denoising steps (typically 4 steps)
-PathLoaderConfig = L(WDSLoader)(
-    datatags=["WDS:/path/to/paths"],
+PathLoaderConfig = L(DirectoryLoader)(
+    data_dir="/path/to/ode_pairs",
     batch_size=2,
-    key_map={"real": "latent.pth", "path": "path.pth", "condition": "txt_emb.pth"},
+    key_map={"real": "latent.pth", "path": "path.pth", "condition": "prompt.txt"},
 )
 
 # ################################################################################

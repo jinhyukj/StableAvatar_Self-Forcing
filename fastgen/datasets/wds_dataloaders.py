@@ -577,3 +577,116 @@ class VideoWDSLoader(WDSLoader):
             else:
                 output[f"{video_key}_cropping_params"] = cropping_params
         return output
+
+
+class DirectoryLoader:
+    """Simple dataloader that reads samples from a directory of subdirectories.
+
+    Expected structure:
+        data_dir/
+            000000/
+                latent.pth
+                path.pth
+                prompt.txt
+            000001/
+                ...
+
+    Each subdirectory is one sample. Files are loaded by extension:
+        .pth -> torch.load()
+        .txt -> read as string
+
+    Args:
+        data_dir: Path to the root data directory.
+        batch_size: Batch size.
+        key_map: Dict mapping output keys to filenames.
+            Example: {"real": "latent.pth", "path": "path.pth", "condition": "prompt.txt"}
+        shuffle: Whether to shuffle samples each epoch.
+        num_workers: Number of dataloader workers.
+        repeat: Whether to repeat indefinitely (for training).
+    """
+
+    def __init__(
+        self,
+        data_dir: str,
+        batch_size: int,
+        key_map: Dict[str, str] | None = None,
+        shuffle: bool = True,
+        num_workers: int = 4,
+        repeat: bool = True,
+    ):
+        from pathlib import Path
+        from torch.utils.data import Dataset, DataLoader
+
+        if key_map is None:
+            key_map = {"real": "latent.pth", "path": "path.pth", "condition": "prompt.txt"}
+
+        self.batch_size = batch_size
+
+        # Discover sample directories (must contain all key_map files)
+        data_path = Path(data_dir)
+        sample_dirs = sorted(
+            d for d in data_path.iterdir() if d.is_dir() and all((d / fname).exists() for fname in key_map.values())
+        )
+        if len(sample_dirs) == 0:
+            raise RuntimeError(f"No valid sample directories found in {data_dir}")
+        logger.info(f"DirectoryLoader: found {len(sample_dirs)} samples in {data_dir}")
+
+        class _Dataset(Dataset):
+            def __init__(self, dirs, key_map):
+                self.dirs = dirs
+                self.key_map = key_map
+
+            def __len__(self):
+                return len(self.dirs)
+
+            def __getitem__(self, idx):
+                d = self.dirs[idx]
+                out = {}
+                for out_key, fname in self.key_map.items():
+                    fpath = d / fname
+                    if fname.endswith(".pth"):
+                        out[out_key] = torch.load(fpath, map_location="cpu", weights_only=True)
+                    elif fname.endswith(".txt"):
+                        out[out_key] = fpath.read_text().strip()
+                    elif fname.endswith(".npy"):
+                        out[out_key] = torch.from_numpy(np.load(fpath))
+                    else:
+                        out[out_key] = torch.load(fpath, map_location="cpu", weights_only=True)
+                return out
+
+        dataset = _Dataset(sample_dirs, key_map)
+
+        if repeat:
+            # Infinite iterator: shuffle internally per epoch, no RandomSampler
+            class _InfiniteLoader:
+                def __init__(self, ds, batch_size, shuffle, num_workers):
+                    self.ds = ds
+                    self.batch_size = batch_size
+                    self.shuffle = shuffle
+                    self.num_workers = num_workers
+
+                def __iter__(self):
+                    while True:
+                        loader = DataLoader(
+                            self.ds,
+                            batch_size=self.batch_size,
+                            shuffle=self.shuffle,
+                            num_workers=self.num_workers,
+                            pin_memory=torch.cuda.is_available(),
+                            drop_last=True,
+                        )
+                        yield from loader
+
+            self.loader = _InfiniteLoader(dataset, batch_size, shuffle, num_workers)
+        else:
+            self.loader = DataLoader(
+                dataset,
+                batch_size=batch_size,
+                shuffle=shuffle,
+                num_workers=num_workers,
+                pin_memory=torch.cuda.is_available(),
+                drop_last=True,
+            )
+
+    def __iter__(self):
+        return iter(self.loader)

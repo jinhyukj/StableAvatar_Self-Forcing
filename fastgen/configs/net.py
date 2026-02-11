@@ -19,6 +19,7 @@ from fastgen.networks.WanI2V.network_causal import CausalWanI2V
 from fastgen.networks.VaceWan.network import VACEWan
 from fastgen.networks.VaceWan.network_causal import CausalVACEWan
 from fastgen.networks.cosmos_predict2.network import CosmosPredict2
+from fastgen.networks.cosmos_predict2.network_causal import CausalCosmosPredict2
 from fastgen.networks.cosmos_predict2.modules import SACConfig, CheckpointMode
 
 from fastgen.utils import LazyCall as L
@@ -292,3 +293,24 @@ CosmosPredict2_2B_Aggressive_Config.sac_config = L(SACConfig)(mode=CheckpointMod
 
 CosmosPredict2_14B_Aggressive_Config = copy.deepcopy(CosmosPredict2_14B_Config)
 CosmosPredict2_14B_Aggressive_Config.sac_config = L(SACConfig)(mode=CheckpointMode.AGGRESSIVE)
+
+# ============ Causal Cosmos Predict2.5 Configs (for Self-Forcing) ============
+# SAC is forced to NONE inside CausalCosmosPredict2 (KV cache + SAC are incompatible)
+
+CausalCosmosPredict2_2B_Config: DictConfig = L(CausalCosmosPredict2)(
+    model_channels=2048,
+    num_blocks=28,
+    num_heads=16,
+    sac_config=L(SACConfig)(mode=CheckpointMode.NONE),
+    fps=24,
+    is_video2world=False,
+    num_conditioning_frames=1,
+    enable_logvar_linear=False,
+    chunk_size=3,
+    total_num_frames=24,
+)
+
+CausalCosmosPredict2_14B_Config = copy.deepcopy(CausalCosmosPredict2_2B_Config)
+CausalCosmosPredict2_14B_Config.model_channels = 5120
+CausalCosmosPredict2_14B_Config.num_blocks = 36
+CausalCosmosPredict2_14B_Config.num_heads = 40

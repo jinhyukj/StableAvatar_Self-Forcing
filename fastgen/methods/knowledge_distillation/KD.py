@@ -134,6 +134,32 @@ class KDModel(FastGenModel):
 
 
 class CausalKDModel(KDModel):
+    def build_model(self):
+        super().build_model()
+        # Initialize text encoder for on-the-fly encoding (prompt.txt → embedding)
+        if hasattr(self.net, "init_text_encoder") and not hasattr(self.net, "text_encoder"):
+            self.net.init_text_encoder()
+
+    def on_train_begin(self, is_fsdp=False):
+        super().on_train_begin(is_fsdp=is_fsdp)
+        # Move text encoder to device (not handled by parent when enable_preprocessors=False)
+        if hasattr(self.net, "text_encoder"):
+            ctx = dict(dtype=self.precision, device=self.device)
+            self.net.text_encoder.to(**ctx)
+
+    def _encode_condition(self, condition):
+        """Encode string prompts to text embeddings on-the-fly."""
+        if condition is None or isinstance(condition, torch.Tensor):
+            return condition
+        if isinstance(condition, (str, list)):
+            from fastgen.utils import basic_utils
+
+            with basic_utils.inference_mode(
+                self.net.text_encoder, precision_amp=self.precision_amp_enc, device_type=self.device.type
+            ):
+                return basic_utils.to(self.net.text_encoder.encode(condition), dtype=self.precision, device=self.device)
+        return condition
+
     def _get_outputs(
         self,
         gen_data: torch.Tensor,
@@ -175,8 +201,31 @@ class CausalKDModel(KDModel):
         """
         denoise_path = data["path"]  # shape is [batch_size, num_inf_steps, C, num_frames, H, W]
         denoised_data = data["real"]  # [batch_size, C, num_frames, H, W]
-        condition = data["condition"]
+        condition = self._encode_condition(data["condition"])
         batch_size, num_frames = denoise_path.shape[0], denoise_path.shape[3]
+
+        # Assemble V2W condition dict if needed
+        if getattr(self.net, "is_video2world", False):
+            conditioning_latents = data.get("conditioning_latents")
+            if conditioning_latents is None:
+                # Extract from clean data's first frame(s) as fallback
+                num_cond = getattr(self.net, "num_conditioning_frames", 1)
+                conditioning_latents = denoised_data[:, :, :num_cond]
+            condition_mask = torch.zeros(
+                batch_size,
+                1,
+                num_frames,
+                denoised_data.shape[3],
+                denoised_data.shape[4],
+                device=self.device,
+                dtype=denoised_data.dtype,
+            )
+            condition_mask[:, :, : getattr(self.net, "num_conditioning_frames", 1)] = 1.0
+            condition = {
+                "text_embeds": condition,
+                "conditioning_latents": conditioning_latents,
+                "condition_mask": condition_mask,
+            }
         chunk_size = self.net.chunk_size
 
         # add noise
@@ -187,7 +236,6 @@ class CausalKDModel(KDModel):
             sample_steps=self.config.student_sample_steps,
             t_list=self.config.sample_t_cfg.t_list,  # Note t_list to be aligned the `path`'s timesteps
             device=self.device,
-            dtype=denoise_path.dtype,
         )  # [batch_size, num_frames]
         expand_shape = [ids.shape[0], 1, 1, ids.shape[1]] + [1] * max(0, denoise_path.ndim - 4)
         ids = ids.view(expand_shape).expand(-1, -1, *denoise_path.shape[2:])  # [batch_size, 1, C, num_frames, H, W]
