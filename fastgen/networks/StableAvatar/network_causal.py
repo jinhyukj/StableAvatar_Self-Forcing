@@ -256,6 +256,9 @@ def _causal_transformer_forward(
     transformer, x, t, context, seq_len, clip_fea=None, y=None,
     vocal_embeddings=None, video_sample_n_frames=81,
     attention_kwargs=None,
+    feature_indices=None,
+    return_features_early=False,
+    vocal_chunk_fn=None,
 ):
     """Causal transformer forward that passes attention_kwargs through to blocks.
 
@@ -308,8 +311,12 @@ def _causal_transformer_forward(
     context_clip = transformer.img_emb(clip_fea)
     context = torch.concat([context_clip, context], dim=1)
 
-    # Vocal context: use override if provided (chunk-based), else compute normally
-    if vocal_context_override is not None:
+    # Vocal context: use callback if provided, override if set, else compute normally
+    if vocal_chunk_fn is not None:
+        lf_start = attn_kwargs.get("lf_start", 0)
+        lf_end = attn_kwargs.get("lf_end", None)
+        vocal_context, vocal_context_lens = vocal_chunk_fn(x, e0, e, lf_start, lf_end)
+    elif vocal_context_override is not None:
         vocal_context = vocal_context_override
         vocal_context_lens = vocal_context_lens_override
     elif vocal_embeddings is not None:
@@ -336,8 +343,9 @@ def _causal_transformer_forward(
     block_attn_kwargs["time_offset"] = time_offset
 
     # Transformer blocks
+    features = []
     frames_per_batch = (video_sample_n_frames - 1) // 4 + 1
-    for block in transformer.blocks:
+    for idx, block in enumerate(transformer.blocks):
         x = _causal_block_forward(
             block, x,
             e=e0, seq_lens=seq_lens, grid_sizes=grid_sizes,
@@ -348,10 +356,18 @@ def _causal_transformer_forward(
             attention_kwargs=block_attn_kwargs,
         )
 
+        if feature_indices is not None and idx in feature_indices:
+            features.append(x)
+            if return_features_early and len(features) == len(feature_indices):
+                return features
+
     # Head & unpatchify
     x = transformer.head(x, e)
     x = transformer.unpatchify(x, grid_sizes)
     x = torch.stack(x)
+
+    if feature_indices is not None and len(features) > 0:
+        return x, features
     return x
 
 
@@ -585,28 +601,41 @@ class CausalStableAvatar(CausalFastGenNetwork, StableAvatar):
         }
 
         # Compute chunk-specific vocal context if precomputed
+        vocal_chunk_callback = None
         if self._precomputed_vocal_splits is not None and is_ar:
             # Get latent frame range for this chunk
             lf_start = cur_start_frame // p_t
             lf_end = (cur_start_frame + T_chunk) // p_t
-            # We need the patchified latents for the vocal projector Stage B;
-            # for simplicity, pass vocal_embeddings=None and handle vocal in attn_kwargs
-            attn_kwargs["vocal_context"] = None  # will be computed in transformer forward
-            attn_kwargs["vocal_context_lens"] = None
-            # Pass vocal_embeddings=None to skip the transformer's internal vocal computation
+            attn_kwargs["lf_start"] = lf_start
+            attn_kwargs["lf_end"] = lf_end
+            # Stage B will be computed inside _causal_transformer_forward via callback
+            vocal_chunk_callback = self.forward_vocal_chunk
             vocal_embeddings_for_fwd = None
         else:
             vocal_embeddings_for_fwd = vocal_embeddings
 
         # Call causal transformer forward
-        out = _causal_transformer_forward(
+        transformer_out = _causal_transformer_forward(
             self.transformer,
             x=x_list, t=timestep, context=context_list,
             seq_len=seq_len, clip_fea=clip_fea, y=y_list,
             vocal_embeddings=vocal_embeddings_for_fwd,
             video_sample_n_frames=self.video_sample_n_frames,
             attention_kwargs=attn_kwargs,
+            feature_indices=feature_indices if len(feature_indices) > 0 else None,
+            return_features_early=return_features_early,
+            vocal_chunk_fn=vocal_chunk_callback,
         )
+
+        # Handle early feature return
+        if return_features_early and len(feature_indices) > 0:
+            return self._unpatchify_features(x_t, transformer_out)
+
+        # Unpack features if present
+        if len(feature_indices) > 0:
+            out, features = transformer_out
+        else:
+            out = transformer_out
 
         # Convert model output
         out = self.noise_scheduler.convert_model_output(
@@ -618,7 +647,7 @@ class CausalStableAvatar(CausalFastGenNetwork, StableAvatar):
             out = self._replace_first_frame(first_frame_cond, out)
 
         if len(feature_indices) > 0:
-            return [out, []]
+            return [out, self._unpatchify_features(x_t, features)]
 
         return out
 

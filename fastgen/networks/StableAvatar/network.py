@@ -152,6 +152,35 @@ class StableAvatar(FastGenNetwork):
             return latents, first_frame_mask
         return latents
 
+    def _unpatchify_features(self, x_t: torch.Tensor, features: List[torch.Tensor]) -> List[torch.Tensor]:
+        """Reshape block features from token space to video space for discriminator.
+
+        Transforms [B, N_tokens, D_model] → [B, D_model/prod(patch_size), T, H, W].
+
+        Args:
+            x_t: Original input tensor [B, C, T, H, W] for shape reference.
+            features: List of [B, N_tokens, D_model] feature tensors from transformer blocks.
+
+        Returns:
+            List of [B, inner_dim, T, H, W] feature tensors where
+            inner_dim = D_model / prod(patch_size).
+        """
+        B, C, T, H, W = x_t.shape
+        p_t, p_h, p_w = self.transformer.patch_size
+        post_patch_num_frames = T // p_t
+        post_patch_height = H // p_h
+        post_patch_width = W // p_w
+        feats = []
+        for feat in features:
+            # Take only the valid tokens (discard padding)
+            n_tokens = post_patch_num_frames * post_patch_height * post_patch_width
+            feat = feat[:, :n_tokens]
+            feat = feat.reshape(B, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1)
+            feat = feat.permute(0, 7, 1, 4, 2, 5, 3, 6)
+            feat = feat.flatten(6, 7).flatten(4, 5).flatten(2, 3)
+            feats.append(feat)
+        return feats
+
     def preserve_conditioning(
         self, x: torch.Tensor, condition: Optional[Dict[str, torch.Tensor]]
     ) -> torch.Tensor:
@@ -236,7 +265,7 @@ class StableAvatar(FastGenNetwork):
         seq_len = f_patches * h_patches * w_patches * 2  # x2 for concat with y
 
         # Call transformer
-        out = self.transformer(
+        transformer_out = self.transformer(
             x=x_list,
             t=timestep,
             context=context_list,
@@ -245,7 +274,19 @@ class StableAvatar(FastGenNetwork):
             y=y_list,
             vocal_embeddings=vocal_embeddings,
             video_sample_n_frames=self.video_sample_n_frames,
+            feature_indices=feature_indices if len(feature_indices) > 0 else None,
+            return_features_early=return_features_early,
         )
+
+        # Handle early feature return
+        if return_features_early and len(feature_indices) > 0:
+            return self._unpatchify_features(x_t, transformer_out)
+
+        # Unpack features if present
+        if len(feature_indices) > 0:
+            out, features = transformer_out
+        else:
+            out = transformer_out
 
         # Convert model output
         out = self.noise_scheduler.convert_model_output(
@@ -256,7 +297,7 @@ class StableAvatar(FastGenNetwork):
         out = self._replace_first_frame(first_frame_cond, out)
 
         if len(feature_indices) > 0:
-            return [out, []]
+            return [out, self._unpatchify_features(x_t, features)]
 
         return out
 

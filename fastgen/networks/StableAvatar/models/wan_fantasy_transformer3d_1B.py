@@ -528,6 +528,8 @@ class WanTransformer3DFantasyModel(nn.Module):
         vocal_embeddings=None,
         video_sample_n_frames=81,
         attention_kwargs=None,
+        feature_indices=None,
+        return_features_early=False,
     ):
         """Forward pass through the diffusion model.
 
@@ -541,6 +543,8 @@ class WanTransformer3DFantasyModel(nn.Module):
             vocal_embeddings (Tensor): Audio embeddings [B, T_audio, 768]
             video_sample_n_frames (int): Number of video frames
             attention_kwargs (dict): Extra kwargs for causal attention (KV cache)
+            feature_indices (set): Block indices to extract features from for discriminator.
+            return_features_early (bool): If True and all features collected, return early.
         """
         if self.model_type == 'i2v':
             assert clip_fea is not None and y is not None
@@ -602,8 +606,9 @@ class WanTransformer3DFantasyModel(nn.Module):
             vocal_context_lens = None
 
         # Transformer blocks
+        features = []
         frames_per_batch = (video_sample_n_frames - 1) // 4 + 1
-        for block in self.blocks:
+        for idx, block in enumerate(self.blocks):
             if torch.is_grad_enabled() and self.gradient_checkpointing:
                 def create_custom_forward(module):
                     def custom_forward(*inputs):
@@ -627,12 +632,20 @@ class WanTransformer3DFantasyModel(nn.Module):
                 )
                 x = block(x, **kwargs)
 
+            if feature_indices is not None and idx in feature_indices:
+                features.append(x)
+                if return_features_early and len(features) == len(feature_indices):
+                    return features
+
         # Head
         x = self.head(x, e)
 
         # Unpatchify
         x = self.unpatchify(x, grid_sizes)
         x = torch.stack(x)
+
+        if feature_indices is not None and len(features) > 0:
+            return x, features
         return x
 
     def unpatchify(self, x, grid_sizes):
