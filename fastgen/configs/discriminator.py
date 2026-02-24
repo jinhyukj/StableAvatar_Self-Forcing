@@ -89,6 +89,14 @@ Discriminator_Wan22_5B_Config: DictConfig = L(Discriminator_VideoDiT)(
     inner_dim=3072 // 4,
 )
 
+# StableAvatar 1.3B: patchify spatial-2, temporal-1; inner_dim=2048; layer=32
+Discriminator_StableAvatar_1B_Config: DictConfig = L(Discriminator_VideoDiT)(
+    feature_indices=None,
+    num_blocks=32,
+    disc_type="dit_simple_conv3d",
+    inner_dim=2048 // 4,
+)
+
 # Cosmos Predict2.5-2B: patchify spatial-2, temporal-1; inner_dim=2048; layer=28
 Discriminator_CosmosPredict2_2B_Config: DictConfig = L(Discriminator_VideoDiT)(
     feature_indices=None,

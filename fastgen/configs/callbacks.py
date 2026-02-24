@@ -12,6 +12,7 @@ from fastgen.callbacks.train_profiler import TrainProfilerCallback
 from fastgen.callbacks.gpu_stats import GPUStatsCallback
 from fastgen.callbacks.forced_weight_norm import ForcedWeightNormCallback
 from fastgen.callbacks.gpu_mem_profiler import MemTrackerCallback
+from fastgen.callbacks.syncnet_eval import SyncNetEvalCallback
 
 
 CTSchedule_CALLBACK = dict(
@@ -60,4 +61,8 @@ WANDB_CALLBACK = dict(
 
 MemTracker_CALLBACK = dict(
     mem_tracker=L(MemTrackerCallback)(),
+)
+
+SyncNetEval_CALLBACK = dict(
+    syncnet_eval=L(SyncNetEvalCallback)(val_sets={}),
 )

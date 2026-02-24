@@ -139,6 +139,12 @@ class SelfForcingModel(CausVidModel):
             ), f"t_list length (excluding zero) != student_sample_steps: {len(t_list) - 1} != {sample_steps}"
             t_list = torch.tensor(t_list, device=self.device, dtype=self.net.noise_scheduler.t_precision)
 
+        # Precompute audio splits for StableAvatar (Stage A of vocal projector)
+        if hasattr(self.net, 'precompute_audio_splits') and isinstance(condition, dict):
+            vocal_emb = condition.get('vocal_embeddings')
+            if vocal_emb is not None:
+                self.net.precompute_audio_splits(vocal_emb, self.net.video_sample_n_frames)
+
         # Collect denoised blocks and concatenate to preserve autograd graph
         denoised_blocks = []
         for block_idx in range(num_blocks):

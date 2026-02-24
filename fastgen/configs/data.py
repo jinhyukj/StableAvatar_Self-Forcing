@@ -122,3 +122,59 @@ ImageNet64_EDMV2_Loader_Config = L(ImageLoader)(
     shuffle=True,
     sampler_start_idx=None,
 )
+
+# ################################################################################
+# StableAvatar Loaders
+# ################################################################################
+
+from fastgen.datasets.stableavatar_loader import StableAvatarDirectoryLoader
+
+STABLEAVATAR_DATA_DIR = os.getenv(
+    "STABLEAVATAR_DATA_DIR",
+    "/home/work/stableavatar_data/v2v_training_data",
+)
+STABLEAVATAR_NEG_COND = os.getenv(
+    "STABLEAVATAR_NEG_COND",
+    None,
+)
+
+StableAvatarLoaderConfig = L(StableAvatarDirectoryLoader)(
+    data_dir=STABLEAVATAR_DATA_DIR,
+    manifest_file=None,
+    neg_condition_path=STABLEAVATAR_NEG_COND,
+    batch_size=1,
+    shuffle=True,
+    num_workers=4,
+    repeat=True,
+    load_clip_fea=True,
+    load_ode_pairs=False,
+)
+
+StableAvatarODEPairLoaderConfig = L(StableAvatarDirectoryLoader)(
+    data_dir=STABLEAVATAR_DATA_DIR,
+    manifest_file=None,
+    neg_condition_path=STABLEAVATAR_NEG_COND,
+    batch_size=1,
+    shuffle=True,
+    num_workers=4,
+    repeat=True,
+    load_clip_fea=True,
+    load_ode_pairs=True,
+)
+
+STABLEAVATAR_VAL_DATA_DIR = os.getenv(
+    "STABLEAVATAR_VAL_DATA_DIR",
+    "/home/work/stableavatar_data/v2v_validation_data/recon",
+)
+
+StableAvatarValLoaderConfig = L(StableAvatarDirectoryLoader)(
+    data_dir=STABLEAVATAR_VAL_DATA_DIR,
+    manifest_file=None,
+    neg_condition_path=STABLEAVATAR_NEG_COND,
+    batch_size=1,
+    shuffle=False,
+    num_workers=2,
+    repeat=False,
+    load_clip_fea=True,
+    load_ode_pairs=False,
+)

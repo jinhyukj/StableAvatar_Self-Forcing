@@ -314,3 +314,39 @@ CausalCosmosPredict2_14B_Config = copy.deepcopy(CausalCosmosPredict2_2B_Config)
 CausalCosmosPredict2_14B_Config.model_channels = 5120
 CausalCosmosPredict2_14B_Config.num_blocks = 36
 CausalCosmosPredict2_14B_Config.num_heads = 40
+
+# ============ StableAvatar Configs ============
+# Custom Wan2.1-based model with audio conditioning via FantasyTalkingVocalCondition1BModel.
+# Uses .pt checkpoint (not diffusers).
+
+from fastgen.networks.StableAvatar.network import StableAvatar
+from fastgen.networks.StableAvatar.network_causal import CausalStableAvatar
+
+STABLEAVATAR_CKPT = os.getenv(
+    "STABLEAVATAR_CKPT",
+    "/home/work/.local/StableAvatar/checkpoints/StableAvatar-1.3B/transformer3d-square.pt",
+)
+
+StableAvatar_1B_Config: DictConfig = L(StableAvatar)(
+    checkpoint_path=STABLEAVATAR_CKPT,
+    dim=2048,
+    num_layers=32,
+    num_heads=16,
+    net_pred_type="flow",
+    schedule_type="rf",
+    video_sample_n_frames=81,
+    load_pretrained=True,
+)
+
+CausalStableAvatar_1B_Config: DictConfig = L(CausalStableAvatar)(
+    checkpoint_path=STABLEAVATAR_CKPT,
+    dim=2048,
+    num_layers=32,
+    num_heads=16,
+    net_pred_type="flow",
+    schedule_type="rf",
+    video_sample_n_frames=81,
+    load_pretrained=True,
+    chunk_size=3,
+    total_num_frames=21,
+)

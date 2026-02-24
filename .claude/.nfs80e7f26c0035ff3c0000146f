@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nvidia-smi:*)",
+      "Bash(echo:*)",
+      "Bash(tail:*)",
+      "Bash(conda run:*)",
+      "Bash(grep:*)"
+    ]
+  }
+}

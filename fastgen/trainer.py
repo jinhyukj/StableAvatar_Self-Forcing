@@ -395,6 +395,10 @@ class Trainer:
         with torch.autocast(
             device_type=model.device.type, dtype=model.precision_amp_enc, enabled=model.precision_amp_enc is not None
         ):
+            # StableAvatar: data is fully precomputed, skip VAE/CLIP encoding
+            if getattr(model.net, "is_stableavatar", False) and "first_frame_cond" in data:
+                return data
+
             # Data/noise
             raw = "{}_raw".format
             for k in ["real", "noise"]:

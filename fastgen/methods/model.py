@@ -449,6 +449,21 @@ class FastGenModel(torch.nn.Module):
                 "text_embeds": data["neg_condition"],
                 "vid_context": vid_context,
             }
+        elif getattr(self.net, "is_stableavatar", False):
+            # handle StableAvatar (audio-conditioned I2V with precomputed data)
+            first_frame_cond = data["first_frame_cond"]
+            condition = {
+                "text_embeds": data["condition"],
+                "first_frame_cond": first_frame_cond,
+                "vocal_embeddings": data["vocal_embeddings"],
+                "clip_fea": data.get("clip_fea"),
+            }
+            neg_condition = {
+                "text_embeds": data["neg_condition"],
+                "first_frame_cond": first_frame_cond,
+                "vocal_embeddings": data["vocal_embeddings"],
+                "clip_fea": data.get("clip_fea"),
+            }
         elif getattr(self.net, "is_i2v", False):
             # handle i2v (WanI2V style)
             first_frame_cond = data["first_frame_cond"]  # this is processed in trainer.py
